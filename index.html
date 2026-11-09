@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Vocab Recall Coach Pro</title>
+
+  <!-- SheetJS for Excel Import/Export -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+  <!-- Official YouGlish Embedded JS API -->
+  <script src="https://youglish.com/public/emb/widget.js" async></script>
+
+  <!-- Modular CSS -->
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+
+<!-- ===== TOAST CONTAINER ===== -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ===== MODAL: ADD / EDIT WORD ===== -->
+<div class="modal-overlay" id="wordModal">
+  <div class="modal">
+    <div class="modal-title">
+      <span id="wordModalTitle">➕ Add New Word</span>
+      <button class="btn-pronounce" id="mPronounceBtn" onclick="pronounceModalWord()" title="Listen to pronunciation" style="display:none;">🔊</button>
+    </div>
+    
+    <div class="tip-banner">
+      <span style="font-size:20px;">💡</span>
+      <span><strong>Pro Tip:</strong> Type a word and click "🤖 AI Lookup". The system will auto-populate translations, IPA, anatomy, word families, phrasal verbs, collocations, and mnemonics.</span>
+    </div>
+
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Word *</label>
+        <input type="text" id="mWord" placeholder="e.g. look" oninput="onWordInput(this.value)"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">IPA Pronunciation</label>
+        <input type="text" id="mIpa" placeholder="e.g. /lʊk/"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Meaning (Arabic) *</label>
+        <input type="text" id="mMeaning" placeholder="e.g. ينظر / يبدو"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Part of Speech</label>
+        <select id="mPos">
+          <option value="">-- Select --</option>
+          <option value="verb">Verb</option>
+          <option value="noun">Noun</option>
+          <option value="adjective">Adjective</option>
+          <option value="adverb">Adverb</option>
+          <option value="phrase">Phrase</option>
+          <option value="idiom">Idiom</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">English Definition</label>
+        <textarea id="mDefinition" placeholder="e.g. Direct one's gaze toward someone or something..."></textarea>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Example Sentences (one per line) *</label>
+        <textarea id="mExamples" placeholder="e.g. Look at the board.&#10;She looks very happy today." style="min-height:90px;"></textarea>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Collocations</label>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="mCollocInput" placeholder="Type collocation and press Enter" onkeydown="addCollocation(event)"/>
+          <button class="btn btn-ghost btn-sm" onclick="addCollocation({key:'Enter'})">Add</button>
+        </div>
+        <div class="tag-list" id="mCollocTags"></div>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Mnemonic / Memory Tip</label>
+        <textarea id="mMnemonic" placeholder="e.g. The two 'o's in look resemble two wide-open eyes."></textarea>
+      </div>
+      <div class="form-group full" id="mPhrasalGroup" style="display:none;">
+        <label class="form-label">🔗 Phrasal Verbs & Combinations Detected by AI</label>
+        <div id="mPhrasalPreview" class="phrasal-preview-box"></div>
+      </div>
+    </div>
+    <div id="lookupStatus" style="display:none; margin-top:16px;">
+      <div class="log-window" id="lookupLog"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeWordModal()">Cancel</button>
+      <button class="btn btn-primary" id="lookupBtn" onclick="triggerLookup()">🤖 AI Lookup</button>
+      <button class="btn btn-success" onclick="saveWord()">💾 Save Word</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: VIEW WORD DETAIL ===== -->
+<div class="modal-overlay" id="viewModal">
+  <div class="modal">
+    <div id="viewModalContent"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeViewModal()">Close</button>
+      <button class="btn btn-primary" onclick="editFromView()">✏️ Edit</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== APP HEADER ===== -->
+<header class="app-header">
+  <div class="app-logo">📚 VocabCoach <span>PRO</span></div>
+  <div class="header-actions">
+    <div id="syncIndicator" class="sync-indicator synced" style="display:none;" onclick="forceSync(true)">🟢 Synced</div>
+    <button class="dark-toggle" onclick="toggleDark()" id="darkBtn">🌙 Dark Mode</button>
+  </div>
+</header>
+
+<!-- ===== NAV TABS ===== -->
+<nav class="nav-tabs" id="navTabs">
+  <button class="nav-tab active" onclick="showTab('dashboard')">🏠 Dashboard</button>
+  <button class="nav-tab" onclick="showTab('practice')">🧠 Practice & Review</button>
+  <button class="nav-tab" onclick="showTab('vocabulary')">📖 Vocabulary</button>
+  <button class="nav-tab" onclick="showTab('bulk-import')">📥 Bulk Import</button>
+  <button class="nav-tab" onclick="showTab('youglish')">🎬 YouGlish</button>
+  <button class="nav-tab" onclick="showTab('settings')">⚙️ Settings</button>
+</nav>
+
+<!-- ===== MAIN CONTENT ===== -->
+<main class="main-content">
+
+  <!-- ========== TAB: DASHBOARD ========== -->
+  <div class="tab-panel active" id="tab-dashboard">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">📚</div>
+        <div class="stat-details">
+          <div class="stat-number" id="statTotal">0</div>
+          <div class="stat-label">Total Words</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🔥</div>
+        <div class="stat-details">
+          <div class="stat-number" id="statDue">0</div>
+          <div class="stat-label">Due for Review</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">✅</div>
+        <div class="stat-details">
+          <div class="stat-number" id="statMastered">0</div>
+          <div class="stat-label">Mastered</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">📅</div>
+        <div class="stat-details">
+          <div class="stat-number" id="statStreak">0</div>
+          <div class="stat-label">Day Streak</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🎯</div>
+        <div class="stat-details">
+          <div class="stat-number" id="statAccuracy">0%</div>
+          <div class="stat-label">Accuracy</div>
+        </div>
+      </div>
+    </div>
+    
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+      <div class="card">
+        <div class="card-title">📊 Proficiency Distribution</div>
+        <div style="display:flex;flex-direction:column;gap:12px;" id="proficiencyBars"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">⚠️ Weakest Words</div>
+        <div id="weakestWords">
+          <div class="empty-state">
+            <div class="empty-state-icon">🌱</div>
+            <div class="empty-state-text">Practice more to identify weak words</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="card">
+      <div class="card-title">📅 Recent Activity</div>
+      <div id="recentActivity">
+        <div class="empty-state">
+          <div class="empty-state-icon">📭</div>
+          <div class="empty-state-text">No activity yet. Start practicing!</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== TAB: PRACTICE & REVIEW ========== -->
+  <div class="tab-panel" id="tab-practice">
+    <div class="card" id="practiceSetupCard">
+      <div class="card-title">🧠 Practice Session Setup</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Session Type</label>
+          <select id="practiceType">
+            <option value="due">Due for Review</option>
+            <option value="all">All Words</option>
+            <option value="weak">Weakest Words</option>
+            <option value="new">New Words Only</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Number of Words</label>
+          <select id="practiceCount">
+            <option value="5">5 words</option>
+            <option value="10" selected>10 words</option>
+            <option value="20">20 words</option>
+            <option value="all">All available</option>
+          </select>
+        </div>
+        <div class="form-group full" style="flex-direction:row; align-items:center; gap:10px;">
+          <input type="checkbox" id="enableCloze" style="width:auto; transform:scale(1.2);" checked>
+          <label class="form-label" style="margin:0; cursor:pointer;" for="enableCloze">Mix in Cloze Tests (Fill-in-the-blanks)</label>
+        </div>
+        <div class="form-group full" style="flex-direction:row; align-items:center; gap:10px;">
+          <input type="checkbox" id="enableVisuals" style="width:auto; transform:scale(1.2);" checked>
+          <label class="form-label" style="margin:0; cursor:pointer;" for="enableVisuals">Show AI Visual Memory Hooks (Images)</label>
+        </div>
+      </div>
+      <div class="form-actions" style="margin-top: 20px;">
+        <button class="btn btn-primary btn-lg" onclick="startPractice('active')">✍️ Start Typing Practice</button>
+        <button class="btn btn-warning btn-lg" onclick="startPractice('flash')">⚡ Flash Review (No Typing)</button>
+      </div>
+    </div>
+    
+    <!-- Active Recall (Typing) UI -->
+    <div id="practiceSessionCard" style="display:none;">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <span style="font-size:13px; color:var(--text2); font-weight:700;" id="practiceProgress">Word 1 of 10</span>
+          <span class="badge badge-primary" id="practiceSessionScore">Score: 0</span>
+        </div>
+        <div class="progress-bar-wrap"><div class="progress-bar-fill" id="practiceProgressBar" style="width:0%"></div></div>
+        
+        <div style="text-align:center; margin-top:16px;">
+          <img id="practiceVisual" class="visual-hook" style="display:none;" alt="Visual memory hook" />
+        </div>
+        
+        <div style="text-align:center; margin: 16px 0 8px;">
+          <div style="font-size:13px; color:var(--text2); font-weight:700; margin-bottom:8px;" id="practicePromptLabel">What word means:</div>
+          <div class="practice-meaning" id="practiceMeaning"></div>
+          <div class="practice-meaning" id="practiceCloze" style="display:none;"></div>
+          <div style="font-size:13px; color:var(--text2); margin-top:8px;" id="practicePos"></div>
+        </div>
+        
+        <div class="practice-hint" id="practiceHintDisplay"></div>
+        
+        <div class="user-input-area">
+          <input type="text" id="practiceInput" placeholder="Type the word here..." autocomplete="off" onkeydown="if(event.key==='Enter') checkAnswer()"/>
+        </div>
+        
+        <!-- Pre-Reveal Guidance Hints -->
+        <div class="hint-buttons" id="preRevealHints">
+          <button class="btn btn-ghost btn-sm" onclick="showHint('pronounce')">🔊 Pronounce</button>
+          <button class="btn btn-ghost btn-sm" onclick="showHint('first')">🔤 1st Letter</button>
+          <button class="btn btn-ghost btn-sm" onclick="showHint('syllables')">🔊 Syllables</button>
+          <button class="btn btn-ghost btn-sm" onclick="showHint('pos')">📝 POS</button>
+          <button class="btn btn-ghost btn-sm" onclick="showHint('definition')">📖 Definition</button>
+          <button class="btn btn-ghost btn-sm" onclick="showHint('example')">💡 Example</button>
+          <button class="btn btn-ghost btn-sm" onclick="showHint('mnemonic')">🧠 Mnemonic</button>
+          <button class="btn btn-warning btn-sm" onclick="revealAnswer()">👁️ Reveal</button>
+        </div>
+        
+        <!-- Answer feedback -->
+        <div id="answerFeedback" style="display:none; margin:16px 0; padding:16px; border-radius:var(--radius); text-align:center;"></div>
+
+        <!-- Post-Reveal Interactive Deep-Dive Buttons -->
+        <div id="postRevealDeepDiveBtns" class="hint-buttons" style="display:none;">
+          <button class="btn btn-ghost btn-sm" onclick="togglePracticeInline('anatomy')">🧩 Anatomy</button>
+          <button class="btn btn-ghost btn-sm" onclick="togglePracticeInline('family')">🌳 Word Family</button>
+          <button class="btn btn-ghost btn-sm" onclick="togglePracticeInline('phrasal')">🔗 Phrasal Verbs</button>
+          <button class="btn btn-ghost btn-sm" onclick="togglePracticeInline('confusables')">⚠️ Watch Out</button>
+          <button class="btn btn-ghost btn-sm" onclick="togglePracticeInline('similar')">🔄 Similar Words</button>
+          <button class="btn btn-ghost btn-sm" onclick="searchWordInYouglishFromPractice()">🎬 Video Context</button>
+        </div>
+
+        <div id="practiceInlineContainer" class="inline-deep-dive"></div>
+        
+        <!-- Rating buttons (FSRS) -->
+        <div class="rating-buttons" id="ratingButtons" style="display:none;">
+          <div style="width:100%; text-align:center; font-size:13px; color:var(--text2); font-weight:700; margin-bottom:4px;">How well did you recall it?</div>
+          <button class="rating-btn rating-forgot" onclick="rateWord(1)">😰 Forgot</button>
+          <button class="rating-btn rating-hard" onclick="rateWord(2)">😓 Hard</button>
+          <button class="rating-btn rating-good" onclick="rateWord(3)">🙂 Good</button>
+          <button class="rating-btn rating-easy" onclick="rateWord(4)">😄 Easy</button>
+        </div>
+        
+        <div style="text-align:center; margin-top:10px;">
+          <button class="btn btn-primary btn-lg" id="checkBtn" onclick="checkAnswer()">✅ Check Answer</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Flash Review (No Typing) UI -->
+    <div id="flashReviewCard" style="display:none;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <span style="font-size:13px; color:var(--text2); font-weight:700;" id="flashProgress">Word 1 of 10</span>
+        <button class="btn btn-ghost btn-sm" onclick="endPracticeSession()">🛑 End Review</button>
+      </div>
+      <div class="progress-bar-wrap"><div class="progress-bar-fill" id="flashProgressBar" style="width:0%"></div></div>
+
+      <div class="flash-review-container" onclick="flipFlashCard()">
+        <div class="flash-card" id="flashCardInner">
+          <div class="flash-face flash-front">
+            <div class="flash-word" id="flashWord"></div>
+            <div style="font-size:16px; color:var(--text2);" id="flashIpa"></div>
+            <div class="flash-instruction">Click to Flip</div>
+          </div>
+          <div class="flash-face flash-back" id="flashBackContent"></div>
+        </div>
+      </div>
+
+      <div class="rating-buttons" id="flashRatingButtons" style="display:none; margin-top: 24px;">
+        <div style="width:100%; text-align:center; font-size:14px; color:var(--text2); font-weight:700; margin-bottom:8px;">How well did you know it?</div>
+        <button class="rating-btn rating-forgot" onclick="rateFlashWord(1, event)">😰 Forgot</button>
+        <button class="rating-btn rating-hard" onclick="rateFlashWord(2, event)">😓 Hard</button>
+        <button class="rating-btn rating-good" onclick="rateFlashWord(3, event)">🙂 Good</button>
+        <button class="rating-btn rating-easy" onclick="rateFlashWord(4, event)">😄 Easy</button>
+      </div>
+    </div>
+    
+    <!-- Session Complete -->
+    <div id="practiceCompleteCard" style="display:none;">
+      <div class="card" style="text-align:center; padding:40px;">
+        <div style="font-size:56px; margin-bottom:16px;">🎉</div>
+        <div style="font-size:26px; font-weight:900; color:var(--primary); margin-bottom:8px;">Session Complete!</div>
+        <div style="font-size:16px; color:var(--text2); margin-bottom:24px;" id="sessionSummary"></div>
+        <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+          <button class="btn btn-primary btn-lg" onclick="showTab('practice'); document.getElementById('practiceCompleteCard').style.display='none'; document.getElementById('practiceSetupCard').style.display='block';">🔄 Practice Again</button>
+          <button class="btn btn-ghost btn-lg" onclick="showTab('dashboard')">🏠 Dashboard</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== TAB: VOCABULARY ========== -->
+  <div class="tab-panel" id="tab-vocabulary">
+    
+    <!-- Sticky Bulk Action Bar -->
+    <div class="bulk-action-bar" id="bulkActionBar">
+      <div style="font-weight:700;"><span id="bulkSelectedCount">0</span> words selected</div>
+      <div class="bulk-actions-btns">
+        <button class="btn btn-sm" onclick="bulkReLookupAI()">🤖 Re-run AI Lookup</button>
+        <button class="btn btn-sm" onclick="bulkDeleteWords()">🗑️ Delete</button>
+        <button class="btn btn-sm" onclick="clearBulkSelection()">❌ Cancel</button>
+      </div>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+      <div style="font-size:22px; font-weight:900; color:var(--text);">📖 My Vocabulary</div>
+      <button class="btn btn-primary" onclick="openAddWordModal()">➕ Add Word</button>
+    </div>
+    
+    <div class="card" style="padding:16px;">
+      <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+        <div class="search-bar">
+          <input type="text" id="vocabSearch" placeholder="Type any letters to search words..." oninput="renderVocabList()"/>
+        </div>
+        <select id="vocabFilter" onchange="renderVocabList()" style="width:auto; min-width:140px;">
+          <option value="all">All Words</option>
+          <option value="due">Due for Review</option>
+          <option value="mastered">Mastered</option>
+          <option value="learning">Still Learning</option>
+          <option value="new">New</option>
+        </select>
+        <select id="vocabSort" onchange="renderVocabList()" style="width:auto; min-width:140px;">
+          <option value="newest">Newest First</option>
+          <option value="oldest">Oldest First</option>
+          <option value="az">A → Z</option>
+          <option value="za">Z → A</option>
+          <option value="due">Due Date</option>
+          <option value="weak">Weakest First</option>
+        </select>
+      </div>
+    </div>
+    
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px; padding: 0 10px;">
+      <input type="checkbox" id="selectAllCheckbox" class="word-item-checkbox" onchange="toggleSelectAll(this.checked)">
+      <label for="selectAllCheckbox" style="font-size:13px; font-weight:700; color:var(--text2); cursor:pointer;">Select All Filtered</label>
+    </div>
+
+    <div class="word-list" id="vocabList"></div>
+  </div>
+
+  <!-- ========== TAB: BULK IMPORT ========== -->
+  <div class="tab-panel" id="tab-bulk-import">
+    <div class="card" id="bulkInputCard">
+      <div class="card-title">📋 Bulk Import Words</div>
+      <p style="font-size:14px; color:var(--text2); margin-bottom:14px;">Paste a list of words separated by commas, newlines, or semicolons. The AI will look up each word for you to review and confirm.</p>
+      <div class="form-group">
+        <textarea id="bulkPasteArea" class="bulk-textarea" placeholder="e.g. resilient, ambiguous, scrutinize, eloquent"></textarea>
+      </div>
+      <div class="form-actions" style="margin-top:16px;">
+        <button class="btn btn-primary btn-lg" onclick="startBulkImport()">🚀 Start Processing</button>
+      </div>
+    </div>
+
+    <div class="card" id="bulkProcessCard" style="display:none;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <span style="font-size:14px; font-weight:700; color:var(--text);" id="bulkProgressText">Word 1 of 5</span>
+        <button class="btn btn-danger btn-sm" onclick="stopBulkImport()">🛑 Stop</button>
+      </div>
+      <div class="progress-bar-wrap"><div class="progress-bar-fill" id="bulkProgressBar" style="width:0%"></div></div>
+      <div class="bulk-word-preview" id="bulkWordQueue"></div>
+      <hr class="divider"/>
+      
+      <div id="bulkEditorArea" style="opacity:0.5; pointer-events:none;">
+        <div class="modal-title" style="margin-bottom:16px; font-size:18px;">
+          Reviewing: <span id="bulkCurrentWordDisplay" style="color:var(--primary);"></span>
+        </div>
+        <div class="form-grid">
+          <div class="form-group"><label class="form-label">Word *</label><input type="text" id="bWord" /></div>
+          <div class="form-group"><label class="form-label">IPA</label><input type="text" id="bIpa" /></div>
+          <div class="form-group"><label class="form-label">Meaning (Arabic) *</label><input type="text" id="bMeaning" /></div>
+          <div class="form-group">
+            <label class="form-label">Part of Speech</label>
+            <select id="bPos">
+              <option value="">-- Select --</option><option value="adjective">Adjective</option>
+              <option value="noun">Noun</option><option value="verb">Verb</option>
+              <option value="adverb">Adverb</option><option value="phrase">Phrase</option>
+              <option value="idiom">Idiom</option><option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-group full"><label class="form-label">English Definition</label><textarea id="bDefinition"></textarea></div>
+          <div class="form-group full"><label class="form-label">Example Sentences</label><textarea id="bExamples" style="min-height:70px;"></textarea></div>
+          <div class="form-group full"><label class="form-label">Mnemonic</label><textarea id="bMnemonic" style="min-height:50px;"></textarea></div>
+        </div>
+        <div class="form-actions" style="margin-top:20px; justify-content:flex-end;">
+          <button class="btn btn-ghost" onclick="skipBulkWord()">⏭️ Skip Word</button>
+          <button class="btn btn-success" onclick="confirmBulkWord()">✅ Confirm & Save</button>
+        </div>
+      </div>
+      <div id="bulkLookupStatus" style="display:block; margin-top:16px;">
+        <div class="log-window" id="bulkLookupLog"></div>
+      </div>
+    </div>
+    
+    <div class="card" id="bulkSummaryCard" style="display:none; text-align:center;">
+      <div style="font-size:48px; margin-bottom:16px;">📊</div>
+      <div class="card-title" style="justify-content:center; font-size:22px;">Import Complete</div>
+      <p style="color:var(--text2); margin-bottom:20px;" id="bulkSummaryText"></p>
+      <button class="btn btn-primary" onclick="resetBulkImport()">📥 Import More Words</button>
+      <button class="btn btn-ghost" onclick="showTab('vocabulary')">📖 View Vocabulary</button>
+    </div>
+  </div>
+
+  <!-- ========== TAB: YOUGLISH (PROTECTED) ========== -->
+  <div class="tab-panel" id="tab-youglish">
+    <div class="card">
+      <div class="card-title">🎬 YouGlish — Real Video Context</div>
+      <div style="display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap;">
+        <input type="text" id="youglishSearchInput" placeholder="Enter a word to watch video clips..." style="flex:1;"/>
+        <select id="youglishAccentSelect" style="width:auto; min-width:130px;">
+          <option value="english">All English</option>
+          <option value="us">American (US)</option>
+          <option value="uk">British (UK)</option>
+          <option value="aus">Australian (AUS)</option>
+        </select>
+        <button class="btn btn-primary" onclick="searchYouglishTab()">🎬 Watch Clips</button>
+      </div>
+      
+      <!-- Protected Video Frame with Transparent Security Shield -->
+      <div class="youglish-wrapper">
+        <div class="youglish-shield top-shield" title="Navigation Locked"></div>
+        <div class="youglish-shield bottom-shield" title="Navigation Locked"></div>
+        <div id="youglish-tab-widget"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== TAB: SETTINGS ========== -->
+  <div class="tab-panel" id="tab-settings">
+    <div class="card">
+      <div class="card-title">☁️ Google Sheets Sync</div>
+      <p style="font-size:14px; color:var(--text2); margin-bottom:14px;">Connect a Google Sheet to back up your vocabulary, logs, and learning progress in real-time.</p>
+      <div class="form-group" style="margin-bottom:14px;">
+        <label class="form-label">Apps Script Web App URL</label>
+        <input type="text" id="sheetsUrlInput" placeholder="https://script.google.com/macros/s/.../exec"/>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-success" onclick="saveSheetsUrl()">💾 Save URL & Sync</button>
+        <button class="btn btn-primary" onclick="syncAllVocabToSheets(true)">⬆️ Push All Words to Sheets</button>
+        <button class="btn btn-warning" onclick="syncAllLogsToSheets(true)">📜 Push Historical Logs</button>
+        <button class="btn btn-danger btn-sm" onclick="clearSheetsUrl()">🗑️ Disconnect</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🔊 Pronunciation Settings</div>
+      <div class="form-group" style="margin-bottom:14px;">
+        <label class="form-label" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+          <input type="checkbox" id="autoPronounceToggle" style="width:auto; transform:scale(1.2);" onchange="toggleAutoPronounce()">
+          Auto-pronounce word when answer is revealed in Practice
+        </label>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Voice Speed</label>
+        <select id="pronounceSpeed" onchange="savePronounceSpeed()">
+          <option value="0.6">🐢 Slow (0.6x)</option>
+          <option value="0.85" selected>🚶 Normal (0.85x)</option>
+          <option value="1.1">🏃 Fast (1.1x)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🤖 Gemini AI Configuration</div>
+      <div class="form-group" style="margin-bottom:14px;">
+        <label class="form-label">Gemini API Key</label>
+        <div style="display:flex; gap:10px;">
+          <input type="password" id="geminiKeyInput" placeholder="Paste your Gemini API key here..."/>
+          <button class="btn btn-ghost btn-sm" onclick="toggleKeyVisibility()" id="toggleKeyBtn" style="white-space:nowrap;">👁️ Show</button>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-success" onclick="saveApiKey()">💾 Save Key</button>
+        <button class="btn btn-ghost" onclick="testApiKey()">🔌 Test Key</button>
+        <button class="btn btn-danger btn-sm" onclick="clearApiKey()">🗑️ Remove Key</button>
+      </div>
+      <div id="keyTestArea" style="display:none; margin-top:14px;">
+        <div style="font-size:13px; font-weight:600; color:var(--text2); margin-bottom:6px;">🔍 Key Test Progress:</div>
+        <div class="log-window" id="keyTestLog"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">💾 Data Management</div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="exportExcel()">📤 Export Excel (.xlsx)</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('importExcelFile').click()">📥 Import Excel</button>
+        <button class="btn btn-ghost" onclick="exportData('json')">📤 Export JSON</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('importFile').click()">📥 Import JSON</button>
+        <button class="btn btn-danger" onclick="confirmClearAll()">🗑️ Clear All Data</button>
+      </div>
+      <input type="file" id="importExcelFile" accept=".xlsx, .xls" style="display:none;" onchange="importExcel(event)"/>
+      <input type="file" id="importFile" accept=".json" style="display:none;" onchange="importData(event)"/>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🧠 FSRS Algorithm Settings</div>
+      <p style="font-size:14px; color:var(--text2); margin-bottom:14px;">This app uses the Free Spaced Repetition Scheduler (FSRS) v4 to mathematically calculate optimal review intervals.</p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Desired Retention (%)</label>
+          <input type="number" id="fsrsRetention" value="90" min="70" max="99"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Maximum Interval (days)</label>
+          <input type="number" id="fsrsMaxInterval" value="36500" min="1"/>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-success" onclick="saveFsrsSettings()">💾 Save FSRS Config</button>
+        <button class="btn btn-ghost" onclick="resetFsrsSettings()">↩️ Reset Defaults</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Modular JavaScript Files -->
+<script src="js/security.js"></script>
+<script src="js/fsrs.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/sync.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/practice.js"></script>
+<script src="js/vocab.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
